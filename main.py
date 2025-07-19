@@ -60,7 +60,7 @@ async def search_ui(request: Request, jql: str = None):
     """UI to trigger and show Jira search results"""
     issues = None
     error = None
-    if jql:
+    if jql is not None:
         user_id = get_current_user(request)
         data, error = await perform_jira_search(jql, user_id)
         if data:
@@ -85,7 +85,7 @@ def get_current_user(request: Request) -> str:
 async def google_drive_search_ui(request: Request, q: str = None, user_id: str = Depends(get_current_user)):
     results = None
     error = None
-    if q:
+    if q is not None:
         try:
             response = api_client.make_request(
                 user_id, 'google', 'GET',
@@ -317,9 +317,13 @@ class APIClient:
         
         if response.status_code == 401:
             # Token might be expired, try to refresh
-            refreshed_token = self.token_manager.refresh_token(
-                user_id, provider, token_data.get('refresh_token')
-            )
+            refresh_token_val = token_data.get('refresh_token')
+            if refresh_token_val is not None:
+                refreshed_token = self.token_manager.refresh_token(
+                    user_id, provider, refresh_token_val
+                )
+            else:
+                refreshed_token = None
             if refreshed_token:
                 headers['Authorization'] = f"Bearer {refreshed_token['access_token']}"
                 response = requests.request(method, url, **kwargs)
@@ -400,10 +404,10 @@ async def auth(provider: str, request: Request, user_id: str = Depends(get_curre
         )
     
     client = oauth.create_client(provider)
-    
+    if client is None:
+        raise HTTPException(status_code=500, detail=f"OAuth client for {provider} could not be created.")
     # Build the correct redirect URI
     redirect_uri = str(request.url_for('callback', provider=provider))
-    
     # For Jira, we need to include audience
     if provider == 'jira':
         return await client.authorize_redirect(
@@ -420,12 +424,12 @@ async def callback(provider: str, request: Request, user_id: str = Depends(get_c
         raise HTTPException(status_code=400, detail=f"Provider {provider} not supported")
     
     client = oauth.create_client(provider)
+    if client is None:
+        raise HTTPException(status_code=500, detail=f"OAuth client for {provider} could not be created.")
     token = await client.authorize_access_token(request)
     print(f"[DEBUG] Received token for {provider}: {json.dumps(token, indent=2)}")
-    
     # Save token
     token_manager.save_token(user_id, provider, token)
-    
     return RedirectResponse(url="/")
 
 @app.get("/api/github/issues")
