@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GitHub Issue Search</title>
+</head>
+<body>
+    <h1>GitHub Issue Search</h1>
+    <form class="search-box" method="get" action="/github_search">
+        <label for="q">Search Query:</label>
+        <input type="text" id="q" name="q" value="{{ q or '' }}" size="50" required>
+        <button type="submit">Search</button>
+    </form>
+    {% if error %}
+        <div style="color: red;">{{ error }}</div>
+    {% endif %}
+    {% if issues %}
+    <div class="results">
+        <h2>Results ({{ issues|length }})</h2>
+        <table>
+            <tr>
+                <th>Title</th>
+                <th>Repository</th>
+                <th>State</th>
+                <th>Link</th>
+            </tr>
+            {% for issue in issues %}
+            <tr>
+                <td>{{ issue.title }}</td>
+                <td>{{ issue.repository_url.split('/')[-1] }}</td>
+                <td>{{ issue.state }}</td>
+                <td><a href="{{ issue.html_url }}" target="_blank">View</a></td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endif %}
+</body>
+</html>

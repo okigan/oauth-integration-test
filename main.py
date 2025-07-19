@@ -1,4 +1,3 @@
-
 # --- Imports ---
 import os
 import requests
@@ -21,8 +20,38 @@ from starlette.middleware.sessions import SessionMiddleware
 load_dotenv()
 
 # --- App and Templates ---
+
+
 app = FastAPI(title="Multi-Service OAuth API")
 templates = Jinja2Templates(directory="templates")
+
+# --- UI route for GitHub issue search ---
+@app.get("/github_search", response_class=HTMLResponse)
+async def github_search_ui(request: Request, q: str = ""):
+    issues = None
+    error = None
+    if q:
+        user_id = get_current_user(request)
+        issues, error = await perform_github_issue_search(q, user_id)
+    return templates.TemplateResponse("github_search.html", {"request": request, "q": q, "issues": issues, "error": error})
+
+
+# --- Helper for GitHub issue search logic ---
+async def perform_github_issue_search(q: str, user_id: str):
+    try:
+        response = api_client.make_request(
+            user_id, 'github', 'GET',
+            'https://api.github.com/search/issues',
+            params={'q': q, 'per_page': 20}
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data.get('items', []), None
+    except requests.RequestException as e:
+        return None, f"GitHub API error: {str(e)}"
+    except Exception as ex:
+        return None, str(ex)
+
 
 
 
@@ -56,7 +85,7 @@ async def perform_jira_search(jql: str, user_id: str):
 
 
 @app.get("/search", response_class=HTMLResponse)
-async def search_ui(request: Request, jql: str = None):
+async def search_ui(request: Request, jql: str = ""):
     """UI to trigger and show Jira search results"""
     issues = None
     error = None
@@ -82,7 +111,7 @@ def get_current_user(request: Request) -> str:
 
 # --- Google Drive Search UI ---
 @app.get("/google_drive_search", response_class=HTMLResponse)
-async def google_drive_search_ui(request: Request, q: str = None, user_id: str = Depends(get_current_user)):
+async def google_drive_search_ui(request: Request, q: str = "", user_id: str = Depends(get_current_user)):
     results = None
     error = None
     if q is not None:
@@ -374,8 +403,13 @@ async def index(request: Request, user_id: str = Depends(get_current_user)):
                     <button type="submit">Search</button>
                     <a href="/search" style="background:#6c757d;">Advanced…</a>
                 </form>
-                <form method="get" action="/google_drive_search">
+                <form method="get" action="/google_drive_search" style="margin-bottom:1em;">
                     <label for="q">Google Drive Search:</label>
+                    <input type="text" id="q" name="q" value="" size="40" required>
+                    <button type="submit">Search</button>
+                </form>
+                <form method="get" action="/github_search">
+                    <label for="q">GitHub Issue Search:</label>
                     <input type="text" id="q" name="q" value="" size="40" required>
                     <button type="submit">Search</button>
                 </form>
@@ -499,6 +533,11 @@ async def google_userinfo(user_id: str = Depends(get_current_user)):
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "providers": list(PROVIDERS.keys())}
+
+# Print the current working directory for debugging
+print("Current working directory:", os.getcwd())
+
+# app.mount("/static", StaticFiles(directory=os.path.join(os.getcwd(), "static")), name="static")
 
 if __name__ == "__main__":
     import uvicorn
