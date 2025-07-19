@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Google Drive Search</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; }
+        .search-box { margin-bottom: 1em; }
+        .results { margin-top: 2em; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <h1>Google Drive Search</h1>
+    <form class="search-box" method="get" action="/google_drive_search">
+        <label for="q">File name contains:</label>
+        <input type="text" id="q" name="q" value="{{ q or '' }}" size="50" required>
+        <button type="submit">Search</button>
+    </form>
+    {% if error %}
+        <div style="color: red;">{{ error }}</div>
+    {% endif %}
+    {% if results %}
+    <div class="results">
+        <h2>Results ({{ results|length }})</h2>
+        <table>
+            <tr>
+                <th>Name</th>
+                <th>MIME Type</th>
+                <th>Open</th>
+            </tr>
+            {% for file in results %}
+            <tr>
+                <td>{{ file.name }}</td>
+                <td>{{ file.mimeType }}</td>
+                <td>{% if file.webViewLink %}<a href="{{ file.webViewLink }}" target="_blank">View</a>{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endif %}
+</body>
+</html>

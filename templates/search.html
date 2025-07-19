@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Jira Issue Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <h1>Jira Issue Search</h1>
+    <form class="search-box" method="get" action="/search">
+        <label for="jql">JQL Query:</label>
+        <input type="text" id="jql" name="jql" value="{{ jql or 'project IS NOT EMPTY' }}" size="50" required>
+        <button type="submit">Search</button>
+    </form>
+    {% if error %}
+        <div style="color: red;">{{ error }}</div>
+    {% endif %}
+    {% if issues %}
+    <div class="results">
+        <h2>Results ({{ issues|length }})</h2>
+        <table>
+            <tr>
+                <th>Key</th>
+                <th>Summary</th>
+                <th>Status</th>
+            </tr>
+            {% for issue in issues %}
+            <tr>
+                <td>{{ issue.key }}</td>
+                <td>{{ issue.fields.summary }}</td>
+                <td>{{ issue.fields.status.name }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endif %}
+</body>
+</html>
