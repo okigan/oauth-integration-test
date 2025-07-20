@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}OAuth Integrations{% endblock %}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background: #f4f4f4; }
+        .connected { color: green; }
+        .disconnected { color: red; }
+        .not-configured { color: #888; }
+        a, button.connect-btn { text-decoration: none; background: #007bff; color: white; padding: 5px 10px; border-radius: 3px; }
+        a:hover, button.connect-btn:hover { background: #0056b3; }
+        form.inline { display: inline; margin: 0; }
+        input[type=text] { width: 180px; }
+    </style>
+</head>
+<body>
+    {% block content %}{% endblock %}
+</body>
+</html>

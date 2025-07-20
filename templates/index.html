@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>OAuth Integrations</h1>
+<p>User: {{ user_id }}</p>
+<h2>Providers</h2>
+<table>
+    <tr>
+        <th>Provider</th>
+        <th>Status</th>
+        <th>Actions</th>
+        <th>Search</th>
+    </tr>
+    <tr>
+        <td><strong>GitHub OAuth App</strong></td>
+        <td class="{{ 'connected' if connections.github else 'disconnected' }}">
+            {{ '✓ Connected' if connections.github else '✗ Not connected' }}
+        </td>
+        <td>
+            <a href="/auth/github" class="connect-btn">Connect</a>
+            <a href="/api/github/user">Get User Profile</a>
+            <a href="/api/github/repos">List Repos</a>
+            <a href="/api/github/issues">List Issues</a>
+        </td>
+        <td>
+            <form method="get" action="/api/github/search" class="inline">
+                <input type="text" name="q" placeholder="Issue search..." required>
+                <button type="submit">Search</button>
+            </form>
+        </td>
+    </tr>
+    <tr>
+        <td><strong>GitHub App (OAuth for users)</strong></td>
+        <td class="{{ 'connected' if connections.github_app_oauth else 'disconnected' }}">
+            {{ '✓ Connected' if connections.github_app_oauth else '✗ Not connected' }}
+        </td>
+        <td>
+            <a href="/auth/github_app_oauth" class="connect-btn">Connect</a>
+            <a href="/api/github/user?provider=github_app_oauth">Get User Profile</a>
+            <a href="/api/github/repos?provider=github_app_oauth">List Repos</a>
+        </td>
+        <td></td>
+    </tr>
+    <tr>
+        <td><strong>GitHub App (Server-to-Server)</strong></td>
+        <td class="{{ 'connected' if connections.github_app else 'not-configured' }}">
+            {{ '✓ Ready' if connections.github_app else '✗ Not configured' }}
+        </td>
+        <td>
+            <a href="/api/github/user?provider=github_app">Get App Installation User</a>
+            <a href="/api/github/repos?provider=github_app">List Installation Repos</a>
+        </td>
+        <td></td>
+    </tr>
+    <tr>
+        <td><strong>Jira</strong></td>
+        <td class="{{ 'connected' if connections.jira else 'disconnected' }}">
+            {{ '✓ Connected' if connections.jira else '✗ Not connected' }}
+        </td>
+        <td>
+            <a href="/auth/jira" class="connect-btn">Connect</a>
+            <a href="/api/jira/myself">Get current user</a>
+        </td>
+        <td>
+            <form method="get" action="/api/jira/search" class="inline">
+                <input type="text" name="jql" value="project IS NOT EMPTY" required>
+                <button type="submit">Search</button>
+                <a href="/search" style="background:#6c757d;">Advanced…</a>
+            </form>
+        </td>
+    </tr>
+    <tr>
+        <td><strong>Google Drive</strong></td>
+        <td class="{{ 'connected' if connections.google_drive else 'disconnected' }}">
+            {{ '✓ Connected' if connections.google_drive else '✗ Not connected' }}
+        </td>
+        <td>
+            <a href="/auth/google_drive" class="connect-btn">Connect</a>
+            <a href="/api/google_drive/userinfo">Get user info</a>
+        </td>
+        <td>
+            <form method="get" action="/api/google_drive/search" class="inline">
+                <input type="text" name="q" placeholder="Drive file search..." required>
+                <button type="submit">Search</button>
+            </form>
+        </td>
+    </tr>
+    <tr>
+        <td><strong>Lucidchart</strong></td>
+        <td class="{{ 'connected' if connections.lucidchart else 'disconnected' }}">
+            {{ '✓ Connected' if connections.lucidchart else '✗ Not connected' }}
+        </td>
+        <td>
+            <a href="/auth/lucidchart" class="connect-btn">Connect</a>
+        </td>
+        <td>
+            <form method="get" action="/api/lucidchart/search" class="inline">
+                <input type="text" name="q" placeholder="Lucidchart doc search..." required>
+                <button type="submit">Search</button>
+            </form>
+        </td>
+    </tr>
+    <tr>
+        <td><strong>Datadog</strong></td>
+        <td class="{{ 'connected' if connections.datadog else 'disconnected' }}">
+            {{ '✓ Connected' if connections.datadog else '✗ Not connected' }}
+        </td>
+        <td>
+            <a href="/auth/datadog" class="connect-btn">Connect</a>
+        </td>
+        <td></td>
+    </tr>
+</table>
+{% endblock %}

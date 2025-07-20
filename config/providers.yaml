@@ -1,0 +1,41 @@
+datadog:
+  client_id: "${DATADOG_CLIENT_ID}"
+  client_secret: "${DATADOG_CLIENT_SECRET}"
+  authorize_url: "https://app.datadoghq.com/oauth2/v1/authorize"
+  token_url: "https://app.datadoghq.com/oauth2/v1/token"
+  scope: "api-access"
+jira:
+  client_id: "${JIRA_CLIENT_ID}"
+  client_secret: "${JIRA_CLIENT_SECRET}"
+  authorize_url: "https://auth.atlassian.com/authorize"
+  token_url: "https://auth.atlassian.com/oauth/token"
+  audience: "api.atlassian.com"
+  scope: "read:jira-work write:jira-work"
+github:
+  client_id: "${GITHUB_CLIENT_ID}"
+  client_secret: "${GITHUB_CLIENT_SECRET}"
+  authorize_url: "https://github.com/login/oauth/authorize"
+  token_url: "https://github.com/login/oauth/access_token"
+  scope: "repo user"
+google_drive:
+  client_id: "${GOOGLE_CLIENT_ID}"
+  client_secret: "${GOOGLE_CLIENT_SECRET}"
+  authorize_url: "https://accounts.google.com/o/oauth2/v2/auth"
+  token_url: "https://oauth2.googleapis.com/token"
+  scope: "openid email profile https://www.googleapis.com/auth/drive.readonly"
+github_app:
+  app_id: "${GITHUB_APP_ID}"
+  private_key: "${GITHUB_APP_PRIVATE_KEY}"
+  installation_id: "${GITHUB_APP_INSTALLATION_ID}"
+github_app_oauth:
+  client_id: "${GITHUB_APP_CLIENT_ID}"
+  client_secret: "${GITHUB_APP_CLIENT_SECRET}"
+  authorize_url: "https://github.com/login/oauth/authorize"
+  token_url: "https://github.com/login/oauth/access_token"
+  scope: "user,repo,read:org,workflow,read:public_key,admin:repo_hook,read:repo_hook,write:repo_hook,admin:org,admin:public_key,admin:org_hook,read:discussion,write:discussion,admin:gpg_key,workflow,write:packages,read:packages,delete:packages,admin:enterprise,manage_billing,read:user,read:enterprise,read:project,write:project,delete:project,read:org,write:org,delete:org,admin:org,admin:org_hook,read:public_key,write:public_key,admin:public_key,read:gpg_key,write:gpg_key,admin:gpg_key,read:repo_hook,write:repo_hook,admin:repo_hook,read:discussion,write:discussion,admin:discussion,read:packages,write:packages,delete:packages,read:pages,write:pages,admin:pages,read:enterprise,write:enterprise,admin:enterprise,read:user,write:user,admin:user,read:project,write:project,admin:project"
+lucidchart:
+  client_id: "${LUCIDCHART_CLIENT_ID}"
+  client_secret: "${LUCIDCHART_CLIENT_SECRET}"
+  authorize_url: "https://lucid.app/oauth2/authorize"
+  token_url: "https://lucid.app/oauth2/token"
+  scope: "documents:read"

@@ -6,11 +6,11 @@ import json
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
+import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
- 
 from authlib.integrations.requests_client import OAuth2Session
 from authlib.integrations.starlette_client import OAuth
 from starlette.middleware.sessions import SessionMiddleware
@@ -25,38 +25,21 @@ app = FastAPI(title="Multi-Service OAuth API")
 templates = Jinja2Templates(directory="templates")
 
 
+# OAuth provider configurations (load from YAML)
+def load_providers():
+    import yaml
+    config_path = os.path.join(os.path.dirname(__file__), "config/providers.yaml")
+    with open(config_path) as f:
+        raw = yaml.safe_load(f)
+    def expand(val):
+        if isinstance(val, str) and val.startswith("${") and val.endswith("}"):
+            return os.getenv(val[2:-1], "")
+        return val
+    def expand_dict(d):
+        return {k: expand(v) if not isinstance(v, dict) else expand_dict(v) for k, v in d.items()}
+    return expand_dict(raw)
 
-# --- Harmonized UI route for GitHub issue search ---
-@app.get("/api/github/search", response_class=HTMLResponse, tags=["github"])
-async def github_search(request: Request, q: str = ""):
-    issues = None
-    error = None
-    if q:
-        user_id = get_current_user(request)
-        issues, error = await perform_github_issue_search(q, user_id)
-    return templates.TemplateResponse(
-        "github_search.html",
-        {"request": request, "q": q, "issues": issues, "error": error},
-    )
-
-
-# --- Helper for GitHub issue search logic ---
-async def perform_github_issue_search(q: str, user_id: str):
-    try:
-        response = api_client.make_request(
-            user_id,
-            "github",
-            "GET",
-            "https://api.github.com/search/issues",
-            params={"q": q, "per_page": 20},
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data.get("items", []), None
-    except requests.RequestException as e:
-        return None, f"GitHub API error: {str(e)}"
-    except Exception as ex:
-        return None, str(ex)
+PROVIDERS = load_providers()
 
 
 # --- UI route for Jira search ---
@@ -67,7 +50,7 @@ async def perform_github_issue_search(q: str, user_id: str):
 async def perform_jira_search(jql: str, user_id: str):
     try:
         # First get accessible resources (Jira instances)
-        response = api_client.make_request(
+        response = await api_client.make_request(
             user_id,
             "jira",
             "GET",
@@ -79,7 +62,7 @@ async def perform_jira_search(jql: str, user_id: str):
             raise Exception("No accessible Jira instances found")
         cloud_id = resources[0]["id"]
         # Search issues
-        search_response = api_client.make_request(
+        search_response = await api_client.make_request(
             user_id,
             "jira",
             "GET",
@@ -181,49 +164,6 @@ def get_github_app_access_token(
         "Accept": "application/vnd.github+json",
     }
     url = f"https://api.github.com/app/installations/{installation_id}/access_tokens"
-    response = requests.post(url, headers=headers)
-    response.raise_for_status()
-    return response.json()["token"]
-
-
-missing_vars = []
-oauth = OAuth()
-for provider_name, config in PROVIDERS.items():
-    client_id = config.get("client_id")
-    client_secret = config.get("client_secret")
-    if client_id is not None and client_secret is not None:
-        if not client_id:
-            missing_vars.append(f"{provider_name.upper()}_CLIENT_ID")
-        if not client_secret:
-            missing_vars.append(f"{provider_name.upper()}_CLIENT_SECRET")
-        print(f"{provider_name.title()} credentials loaded: {'Yes' if client_id and client_secret else 'No'}")
-        if client_id and client_secret:
-            if provider_name == "google_drive":
-                oauth.register(
-                    name=provider_name,
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-                    client_kwargs={"scope": config["scope"]},
-                )
-            else:
-                oauth.register(
-                    name=provider_name,
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    authorize_url=config["authorize_url"],
-                    access_token_url=config["token_url"],
-                    client_kwargs={"scope": config["scope"]} if "scope" in config else {},
-                )
-        else:
-            print(f"Skipping {provider_name} registration - missing credentials")
-    else:
-        print(f"Skipping {provider_name} validation/registration - not an OAuth client provider")
-if missing_vars:
-    print("Warning: Missing environment variables:", ", ".join(missing_vars))
-    print("Please set these in your .env file or environment")
-
-# --- Unified search endpoints ---
 @app.get("/api/jira/search", response_class=HTMLResponse, tags=["jira"])
 async def jira_search_ui(request: Request, jql: str = "", user_id: str = Depends(get_current_user)):
     issues = None
@@ -243,7 +183,7 @@ async def google_drive_search_ui(request: Request, q: str = "", user_id: str = D
     error = None
     if q:
         try:
-            response = api_client.make_request(
+            response = await api_client.make_request(
                 user_id,
                 "google_drive",
                 "GET",
@@ -256,6 +196,8 @@ async def google_drive_search_ui(request: Request, q: str = "", user_id: str = D
             )
             response.raise_for_status()
             data = response.json()
+            if hasattr(data, "__await__"):
+                data = await data
             results = data.get("files", [])
         except Exception as ex:
             error = str(ex)
@@ -264,13 +206,40 @@ async def google_drive_search_ui(request: Request, q: str = "", user_id: str = D
         {"request": request, "q": q, "results": results, "error": error},
     )
 
+
+
+
+# Register Datadog with Authlib if present in PROVIDERS (from YAML)
+if "datadog" in PROVIDERS and isinstance(PROVIDERS["datadog"], dict):
+    datadog_cfg = PROVIDERS["datadog"]
+    if datadog_cfg.get("client_id") and datadog_cfg.get("client_secret"):
+        oauth.register(
+            name="datadog",
+            client_id=datadog_cfg["client_id"],
+            client_secret=datadog_cfg["client_secret"],
+            authorize_url=datadog_cfg["authorize_url"],
+            access_token_url=datadog_cfg["token_url"],
+            client_kwargs={"scope": datadog_cfg["scope"]},
+        )
+
+@app.get("/auth/datadog", tags=["auth"])
+async def auth_datadog(request: Request, user_id: str = Depends(get_current_user)):
+    datadog_cfg = PROVIDERS["datadog"] if isinstance(PROVIDERS.get("datadog"), dict) else {}
+    if not (datadog_cfg.get("client_id") and datadog_cfg.get("client_secret")):
+        raise HTTPException(status_code=500, detail="Datadog credentials not configured.")
+    client = oauth.create_client("datadog")
+    if client is None:
+        raise HTTPException(status_code=500, detail="OAuth client for Datadog could not be created.")
+    redirect_uri = str(request.url_for("callback", provider="datadog"))
+    return await client.authorize_redirect(request, redirect_uri)
+
 @app.get("/api/lucidchart/search", response_class=HTMLResponse, tags=["lucidchart"])
 async def lucidchart_search_ui(request: Request, q: str = "", user_id: str = Depends(get_current_user)):
     results = None
     error = None
     if q:
         try:
-            response = api_client.make_request(
+            response = await api_client.make_request(
                 user_id,
                 "lucidchart",
                 "GET",
@@ -290,7 +259,7 @@ async def lucidchart_search_ui(request: Request, q: str = "", user_id: str = Dep
 @app.get("/api/lucidchart/preview/{doc_id}", response_class=HTMLResponse, tags=["lucidchart"])
 async def lucidchart_preview(doc_id: str, request: Request, user_id: str = Depends(get_current_user)):
     try:
-        response = api_client.make_request(
+        response = await api_client.make_request(
             user_id,
             "lucidchart",
             "GET",
@@ -434,190 +403,74 @@ class APIClient:
     def __init__(self, token_manager: TokenManager):
         self.token_manager = token_manager
 
-    def make_request(
+    async def make_request(
         self, user_id: str, provider: str, method: str, url: str, **kwargs
-    ) -> requests.Response:
-        if provider == "github_app":
-            app_config = PROVIDERS["github_app"]
-            if (
-                not app_config["app_id"]
-                or not app_config["private_key"]
-                or not app_config["installation_id"]
-            ):
-                raise HTTPException(
-                    status_code=500,
-                    detail="GitHub App credentials not configured. Please set GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, and GITHUB_APP_INSTALLATION_ID environment variables.",
-                )
-            access_token = get_github_app_access_token(
-                app_config["app_id"],
-                app_config["private_key"],
-                app_config["installation_id"],
-            )
-            headers = kwargs.get("headers", {})
-            headers["Authorization"] = f"Bearer {access_token}"
-            kwargs["headers"] = headers
-            response = requests.request(method, url, **kwargs)
-            return response
-        else:
-            token_data = self.token_manager.get_token(user_id, provider)
-            if not token_data:
-                raise HTTPException(
-                    status_code=401,
-                    detail=f"No valid token for {provider}. Please connect your account first.",
-                )
-            headers = kwargs.get("headers", {})
-            headers["Authorization"] = f"Bearer {token_data['access_token']}"
-            kwargs["headers"] = headers
-
-            response = requests.request(method, url, **kwargs)
-
-            if response.status_code == 401 and provider != "github_app":
-                # Token might be expired, try to refresh
-                refresh_token_val = token_data.get("refresh_token")
-                if refresh_token_val is not None:
-                    refreshed_token = self.token_manager.refresh_token(
-                        user_id, provider, refresh_token_val
+    ) -> "httpx.Response":
+        import httpx
+        async with httpx.AsyncClient() as client:
+            if provider == "github_app":
+                app_config = PROVIDERS["github_app"]
+                if (
+                    not app_config["app_id"]
+                    or not app_config["private_key"]
+                    or not app_config["installation_id"]
+                ):
+                    raise HTTPException(
+                        status_code=500,
+                        detail="GitHub App credentials not configured. Please set GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, and GITHUB_APP_INSTALLATION_ID environment variables.",
                     )
-                else:
-                    refreshed_token = None
-                if refreshed_token:
-                    headers["Authorization"] = f"Bearer {refreshed_token['access_token']}"
-                    response = requests.request(method, url, **kwargs)
+                access_token = get_github_app_access_token(
+                    app_config["app_id"],
+                    app_config["private_key"],
+                    app_config["installation_id"],
+                )
+                headers = kwargs.get("headers", {})
+                headers["Authorization"] = f"Bearer {access_token}"
+                kwargs["headers"] = headers
+                response = await client.request(method, url, **kwargs)
+                return response
+            else:
+                token_data = self.token_manager.get_token(user_id, provider)
+                if not token_data:
+                    raise HTTPException(
+                        status_code=401,
+                        detail=f"No valid token for {provider}. Please connect your account first.",
+                    )
+                headers = kwargs.get("headers", {})
+                headers["Authorization"] = f"Bearer {token_data['access_token']}"
+                kwargs["headers"] = headers
 
-            return response
+                response = await client.request(method, url, **kwargs)
+
+                if response.status_code == 401 and provider != "github_app":
+                    # Token might be expired, try to refresh
+                    refresh_token_val = token_data.get("refresh_token")
+                    if refresh_token_val is not None:
+                        refreshed_token = self.token_manager.refresh_token(
+                            user_id, provider, refresh_token_val
+                        )
+                    else:
+                        refreshed_token = None
+                    if refreshed_token:
+                        headers["Authorization"] = f"Bearer {refreshed_token['access_token']}"
+                        response = await client.request(method, url, **kwargs)
+
+                return response
 
 
 api_client = APIClient(token_manager)
 
 
 # Routes
+
 @app.get("/", response_class=HTMLResponse, tags=["ui"])
 async def index(request: Request, user_id: str = Depends(get_current_user)):
-    connections = token_manager.get_all_connections(user_id)
-
-    html_content = f"""
-    <html>
-        <head>
-            <title>OAuth Integrations</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                table {{ border-collapse: collapse; width: 100%; }}
-                th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
-                th {{ background: #f4f4f4; }}
-                .connected {{ color: green; }}
-                .disconnected {{ color: red; }}
-                .not-configured {{ color: #888; }}
-                a, button.connect-btn {{ text-decoration: none; background: #007bff; color: white; padding: 5px 10px; border-radius: 3px; }}
-                a:hover, button.connect-btn:hover {{ background: #0056b3; }}
-                form.inline {{ display: inline; margin: 0; }}
-                input[type=text] {{ width: 180px; }}
-            </style>
-        </head>
-        <body>
-            <h1>OAuth Integrations</h1>
-            <p>User: {user_id}</p>
-            <h2>Providers</h2>
-            <table>
-                <tr>
-                    <th>Provider</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                    <th>Search</th>
-                </tr>
-                <tr>
-                    <td><strong>GitHub OAuth App</strong></td>
-                    <td class="{'connected' if connections.get('github') else 'disconnected'}">
-                        {'✓ Connected' if connections.get('github') else '✗ Not connected'}
-                    </td>
-                    <td>
-                        <a href="/auth/github" class="connect-btn">Connect</a>
-                        <a href="/api/github/user">Get User Profile</a>
-                        <a href="/api/github/repos">List Repos</a>
-                        <a href="/api/github/issues">List Issues</a>
-                    </td>
-                    <td>
-                        <form method="get" action="/api/github/search" class="inline">
-                            <input type="text" name="q" placeholder="Issue search..." required>
-                            <button type="submit">Search</button>
-                        </form>
-                    </td>
-                </tr>
-                <tr>
-                    <td><strong>GitHub App (OAuth for users)</strong></td>
-                    <td class="{'connected' if connections.get('github_app_oauth') else 'disconnected'}">
-                        {'✓ Connected' if connections.get('github_app_oauth') else '✗ Not connected'}
-                    </td>
-                    <td>
-                        <a href="/auth/github_app_oauth" class="connect-btn">Connect</a>
-                        <a href="/api/github/user?provider=github_app_oauth">Get User Profile</a>
-                        <a href="/api/github/repos?provider=github_app_oauth">List Repos</a>
-                    </td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td><strong>GitHub App (Server-to-Server)</strong></td>
-                    <td class="{'connected' if connections.get('github_app') else 'not-configured'}">
-                        {'✓ Ready' if connections.get('github_app') else '✗ Not configured'}
-                    </td>
-                    <td>
-                        <a href="/api/github/user?provider=github_app">Get App Installation User</a>
-                        <a href="/api/github/repos?provider=github_app">List Installation Repos</a>
-                    </td>
-                    <td></td>
-                </tr>
-                <tr>
-                    <td><strong>Jira</strong></td>
-                    <td class="{'connected' if connections.get('jira') else 'disconnected'}">
-                        {'✓ Connected' if connections.get('jira') else '✗ Not connected'}
-                    </td>
-                    <td>
-                        <a href="/auth/jira" class="connect-btn">Connect</a>
-                        <a href="/api/jira/myself">Get current user</a>
-                    </td>
-                    <td>
-                        <form method="get" action="/api/jira/search" class="inline">
-                            <input type="text" name="jql" value="project IS NOT EMPTY" required>
-                            <button type="submit">Search</button>
-                            <a href="/search" style="background:#6c757d;">Advanced…</a>
-                        </form>
-                    </td>
-                </tr>
-                <tr>
-                    <td><strong>Google Drive</strong></td>
-                    <td class="{'connected' if connections.get('google_drive') else 'disconnected'}">
-                        {'✓ Connected' if connections.get('google_drive') else '✗ Not connected'}
-                    </td>
-                    <td>
-                        <a href="/auth/google_drive" class="connect-btn">Connect</a>
-                        <a href="/api/google_drive/userinfo">Get user info</a>
-                    </td>
-                    <td>
-                        <form method="get" action="/api/google_drive/search" class="inline">
-                            <input type="text" name="q" placeholder="Drive file search..." required>
-                            <button type="submit">Search</button>
-                        </form>
-                    </td>
-                </tr>
-                <tr>
-                    <td><strong>Lucidchart</strong></td>
-                    <td class="{'connected' if connections.get('lucidchart') else 'disconnected'}">
-                        {'✓ Connected' if connections.get('lucidchart') else '✗ Not connected'}
-                    </td>
-                    <td>
-                        <a href="/auth/lucidchart" class="connect-btn">Connect</a>
-                    </td>
-                    <td>
-                        <form method="get" action="/api/lucidchart/search" class="inline">
-                            <input type="text" name="q" placeholder="Lucidchart doc search..." required>
-                            <button type="submit">Search</button>
-                        </form>
-                    </td>
-                </tr>
-            </table>
-        </body>
-    </html>
-    """
-    return html_content
+    # Ensure connections includes all providers from PROVIDERS
+    connections = {provider: token_manager.is_connected(user_id, provider) for provider in PROVIDERS.keys()}
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "user_id": user_id, "connections": connections},
+    )
 
 
 @app.get("/auth/{provider}", tags=["auth"])
@@ -682,7 +535,7 @@ async def callback(
 async def github_issues(user_id: str = Depends(get_current_user)):
     """List issues assigned to the authenticated GitHub user"""
     try:
-        response = api_client.make_request(
+        response = await api_client.make_request(
             user_id,
             "github",
             "GET",
@@ -691,7 +544,7 @@ async def github_issues(user_id: str = Depends(get_current_user)):
         )
         response.raise_for_status()
         return response.json()
-    except requests.RequestException as e:
+    except Exception as e:
         raise HTTPException(status_code=400, detail=f"GitHub API error: {str(e)}")
 
 
@@ -710,12 +563,12 @@ async def jira_search(
 async def github_user(user_id: str = Depends(get_current_user)):
     """Get GitHub user profile"""
     try:
-        response = api_client.make_request(
+        response = await api_client.make_request(
             user_id, "github", "GET", "https://api.github.com/user"
         )
         response.raise_for_status()
         return response.json()
-    except requests.RequestException as e:
+    except Exception as e:
         raise HTTPException(status_code=400, detail=f"GitHub API error: {str(e)}")
 
 
@@ -723,7 +576,7 @@ async def github_user(user_id: str = Depends(get_current_user)):
 async def github_repos(user_id: str = Depends(get_current_user)):
     """Get user's GitHub repositories"""
     try:
-        response = api_client.make_request(
+        response = await api_client.make_request(
             user_id,
             "github",
             "GET",
@@ -732,7 +585,7 @@ async def github_repos(user_id: str = Depends(get_current_user)):
         )
         response.raise_for_status()
         return response.json()
-    except requests.RequestException as e:
+    except Exception as e:
         raise HTTPException(status_code=400, detail=f"GitHub API error: {str(e)}")
 
 
@@ -740,12 +593,12 @@ async def github_repos(user_id: str = Depends(get_current_user)):
 async def google_drive_userinfo(user_id: str = Depends(get_current_user)):
     """Get Google Drive user info"""
     try:
-        response = api_client.make_request(
+        response = await api_client.make_request(
             user_id, "google_drive", "GET", "https://www.googleapis.com/oauth2/v2/userinfo"
         )
         response.raise_for_status()
         return response.json()
-    except requests.RequestException as e:
+    except Exception as e:
         raise HTTPException(status_code=400, detail=f"Google Drive API error: {str(e)}")
 
 
